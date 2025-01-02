@@ -100,6 +100,13 @@ export async function loader({ params }: Route.LoaderArgs): Promise<Data> {
 
 export async function action({ request }: Route.ActionArgs) {
     let formData = await request.formData();
+    const remove = await formData.get('remove');
+    if (typeof remove === 'string') {
+        const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
+        delete data.quotes[remove];
+        writeFileSync(fp, JSON.stringify(data));
+        return true;
+    }
     let quote = JSON.parse((await formData.get('quote')) as string);
 
     const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
@@ -110,10 +117,25 @@ export async function action({ request }: Route.ActionArgs) {
     return true;
 }
 
+const useLatest = <T,>(v: T): { current: T } => {
+    const ref = useRef(v);
+    ref.current = v;
+    return ref;
+};
+
 export default function Home({ loaderData }: Route.ComponentProps) {
     const [url, setUrl] = useState<undefined | string>(undefined);
     const ref = useRef<HTMLIFrameElement>(null);
     const fetcher = useFetcher();
+
+    const latest = useLatest(loaderData);
+
+    useEffect(() => {
+        const w = ref.current?.contentWindow;
+        if (w) {
+            highlighter(latest, w.location.pathname, w);
+        }
+    }, [loaderData]);
 
     return (
         <div>
@@ -136,17 +158,19 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                         flex: 1,
                     }}
                 >
-                    <div>
+                    <div className="p-2 gap-2 flex">
                         <button
                             onClick={() => {
                                 if (!ref.current) return;
                                 const loc = ref.current.contentWindow!.location;
                                 loc.search = '?go=prev';
                             }}
+                            className="bg-orange-300 px-2 rounded cursor-pointer flex-1"
                         >
                             Prev
                         </button>
                         <button
+                            className="bg-orange-300 px-2 rounded cursor-pointer flex-1"
                             onClick={() => {
                                 if (!ref.current) return;
                                 const loc = ref.current.contentWindow!.location;
@@ -171,8 +195,12 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                         }}
                         src={`/epub/nrsvue.epub/`}
                         onLoad={(evt) => {
-                            setUrl(evt.currentTarget.contentWindow?.location.pathname);
                             const w = evt.currentTarget.contentWindow!;
+                            const pathname = w.location.pathname;
+                            setUrl(pathname);
+
+                            highlighter(latest, pathname, w);
+
                             w.document.addEventListener('mouseup', () => {
                                 console.log('sel change');
                                 const s = w.document.getSelection();
@@ -224,7 +252,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                                 // const data = { ...loaderData };
                                 // data.quotes = { ...data.quotes, [quote.id]: quote };
 
-                                fetcher.submit({ quote: JSON.stringify(quote) }, { method: 'post' });
+                                fetcher.submit({ quote: JSON.stringify(quote) }, { method: 'post' }).then(() => {
+                                    s.removeAllRanges();
+                                    highlighter(latest, pathname, w);
+                                });
                             });
                             // alert('hi');
                         }}
@@ -234,9 +265,17 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                     Sidebar here
                     <div>{url}</div>
                     {Object.entries(loaderData.quotes).map(([k, v]) => (
-                        <div key={k}>
+                        <div key={k} className="bg-slate-300 p-2 mb-4">
                             {v.id}
                             <div dangerouslySetInnerHTML={{ __html: v.raw }} />
+                            <button
+                                onClick={() => {
+                                    fetcher.submit({ remove: v.id }, { method: 'post' });
+                                }}
+                                style={{ background: 'red' }}
+                            >
+                                Remove
+                            </button>
                         </div>
                     ))}
                 </div>
@@ -248,6 +287,40 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 }
 
 export const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+function highlighter(latest: { current: Data }, pathname: string, w: Window) {
+    const relevant = Object.values(latest.current.quotes).filter((q) => q.location.href === pathname);
+    const hls: DOMRect[] = [];
+    relevant.forEach((quote) => {
+        const s = w.getSelection()!;
+        s.removeAllRanges();
+        s.addRange(new w.self.Range());
+        const r = s.getRangeAt(0);
+        r.setStart(resolveNodePath(quote.location.start.anchor, w.document), quote.location.start.offset);
+        r.setEnd(resolveNodePath(quote.location.end.anchor, w.document), quote.location.end.offset);
+        hls.push(...r.getClientRects());
+        s.removeAllRanges();
+    });
+    const id = 'jesus-highlights';
+    const already = w.document.getElementById(id);
+    if (already) already.remove();
+    const h = w.document.createElement('div');
+    h.id = id;
+    hls.forEach((box) => {
+        const node = w.document.createElement('div');
+        Object.assign(node.style, {
+            position: 'absolute',
+            left: box.left + 'px',
+            top: box.top + 'px',
+            width: box.width + 'px',
+            height: box.height + 'px',
+            backgroundColor: 'red',
+            opacity: 0.1,
+        });
+        h.append(node);
+    });
+    w.document.body.append(h);
+}
 
 function getCustomizedStyles(element: HTMLElement) {
     // Get computed styles for the element
@@ -261,6 +334,7 @@ function getCustomizedStyles(element: HTMLElement) {
     // Compare computed styles with default styles
     const customizedStyles: Record<string, string> = {};
     for (let property of computedStyles) {
+        if (['transform-origin', 'width', 'height', 'perspective-origin', 'inline-size', 'block-size'].includes(property)) continue;
         const computedValue = computedStyles.getPropertyValue(property);
         const defaultValue = defaultStyles.getPropertyValue(property);
 
