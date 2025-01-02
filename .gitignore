@@ -1,4 +1,6 @@
 .DS_Store
+data.json
+bible
 /node_modules/
 
 # React Router

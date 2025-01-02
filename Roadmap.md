@@ -1,4 +1,23 @@
 
+# Data structuring
+
+- "Tags"
+  - a color
+  - a shortcut key
+  - a title
+- "Quote"
+  - location (href, start+end(anchor/offset))
+  - raw html
+  - edited html
+  - notes
+  - tag(s)
+
+In the sidebar, you can view
+1) annotations for the current file
+2) all annotations for a given tag
+3) ... the X (5?10?) most recent annotations
+
+
 # Basic plan:
 
 - have the epub in an iframe
