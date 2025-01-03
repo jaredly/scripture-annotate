@@ -5,9 +5,10 @@ import type { Route } from './+types/home';
 // import { parse } from 'node-html-parser';
 import { useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
+import { cachedChapterNames } from './epub';
 
 export function meta({}: Route.MetaArgs) {
-    return [{ title: 'New React Router App' }, { name: 'description', content: 'Welcome to React Router!' }];
+    return [{ title: 'Scripture Annotation' }, { name: 'description', content: 'A tool for annotating scriptures' }];
 }
 
 type NodePath =
@@ -16,12 +17,29 @@ type NodePath =
     | { type: 'class'; class: string; index: number }
     | { type: 'child'; index: number };
 
-type NodeLoc = { anchor: NodePath[]; offset: number };
-type Location = { href: string; start: NodeLoc; end: NodeLoc };
+// TODO: work backwards from the start to find what verse we're in
+type NodeLoc = { anchor: NodePath[]; offset: number; verse?: number };
+type Location = {
+    href: string;
+    start: NodeLoc;
+    end: NodeLoc;
+    chapter: string;
+};
 
+type Quote = {
+    id: string;
+    location: Location;
+    raw: string;
+    edited: string;
+    notes: string;
+    tags: string[];
+    created: number;
+    updated: number;
+};
+type Tag = { id: string; color: string; key: string; title: string; created: number; updated: number };
 type Data = {
-    tags: Record<string, { id: string; color: string; key: string; title: string }>;
-    quotes: Record<string, { id: string; location: Location; raw: string; edited: string; notes: string; tags: string[] }>;
+    tags: Record<string, Tag>;
+    quotes: Record<string, Quote>;
 };
 
 const resolveNodePath = (path: NodePath[], document: Document) => {
@@ -90,27 +108,64 @@ const getNodePath = (node: Node): NodePath[] => {
 
 const fp = './data.json';
 const initial: Data = { quotes: {}, tags: {} };
-export async function loader({ params }: Route.LoaderArgs): Promise<Data> {
+export async function loader({ params }: Route.LoaderArgs): Promise<{ data: Data; titles: Record<string, string> }> {
     if (!existsSync(fp)) {
-        return initial;
+        return { data: initial, titles: cachedChapterNames() };
     }
     const data = JSON.parse(readFileSync(fp, 'utf-8'));
-    return data;
+    const titles = cachedChapterNames();
+    return { data, titles };
 }
+
+const colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928'];
 
 export async function action({ request }: Route.ActionArgs) {
     let formData = await request.formData();
-    const remove = await formData.get('remove');
+    const type = formData.get('type');
+    if (type === 'add-tag') {
+        const quote = formData.get('quote');
+        const tag = formData.get('tag');
+        if (typeof quote === 'string' && typeof tag === 'string') {
+            const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
+            data.quotes[quote].tags.push(tag);
+            data.quotes[quote].updated = Date.now();
+            writeFileSync(fp, JSON.stringify(data));
+            return true;
+        }
+    }
+    if (type === 'rm-tag') {
+        const quote = formData.get('quote');
+        const tag = formData.get('tag');
+        if (typeof quote === 'string' && typeof tag === 'string') {
+            const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
+            data.quotes[quote].tags = data.quotes[quote].tags.filter((t) => t !== tag);
+            data.quotes[quote].updated = Date.now();
+            writeFileSync(fp, JSON.stringify(data));
+            return true;
+        }
+    }
+
+    const remove = formData.get('remove');
     if (typeof remove === 'string') {
         const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
         delete data.quotes[remove];
         writeFileSync(fp, JSON.stringify(data));
         return true;
     }
-    let quote = JSON.parse((await formData.get('quote')) as string);
+    const newTag = formData.get('newTag');
+    if (typeof newTag === 'string') {
+        const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
+        const id = genId();
+        const n = Object.keys(data.tags).length;
+        data.tags[id] = { id, title: newTag, color: colors[n % colors.length], key: n + 1 + '', created: Date.now(), updated: Date.now() };
+        writeFileSync(fp, JSON.stringify(data));
+        return true;
+    }
+    let quote: Quote = JSON.parse(formData.get('quote') as string);
 
     const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
 
+    quote.updated = Date.now();
     data.quotes[quote.id] = quote;
 
     writeFileSync(fp, JSON.stringify(data));
@@ -123,12 +178,17 @@ const useLatest = <T,>(v: T): { current: T } => {
     return ref;
 };
 
+type Filters = {
+    thisChapter: boolean;
+    tags: {};
+};
+
 export default function Home({ loaderData }: Route.ComponentProps) {
     const [url, setUrl] = useState<undefined | string>(undefined);
     const ref = useRef<HTMLIFrameElement>(null);
     const fetcher = useFetcher();
 
-    const latest = useLatest(loaderData);
+    const latest = useLatest(loaderData.data);
 
     useEffect(() => {
         const w = ref.current?.contentWindow;
@@ -136,6 +196,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             highlighter(latest, w.location.pathname, w);
         }
     }, [loaderData]);
+
+    const [filters, setFilters] = useState<Filters>({ thisChapter: true, tags: {} });
 
     return (
         <div>
@@ -183,13 +245,6 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                     <iframe
                         ref={ref}
                         style={{
-                            // top: '10vh',
-                            // bottom: '10vh',
-                            // left: '10vw',
-                            // right: '10vw',
-                            // position: 'absolute',
-                            // width: '80vw',
-                            // height: '80vh',
                             flex: 1,
                             padding: 24,
                         }}
@@ -220,6 +275,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
                                 const outer = w.document.createElement('div');
                                 outer.append(range.cloneContents());
+                                outer.querySelectorAll('a').forEach((a) => a.remove());
                                 const raw = outer.innerHTML;
 
                                 if (!raw.trim().length) return;
@@ -236,6 +292,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                                 const quote: Data['quotes'][''] = {
                                     id,
                                     edited: raw,
+                                    created: Date.now(),
+                                    updated: Date.now(),
                                     raw,
                                     location: {
                                         href: w.location.pathname,
@@ -261,23 +319,84 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                         }}
                     />
                 </div>
-                <div style={{ flex: 1, padding: 24 }}>
-                    Sidebar here
-                    <div>{url}</div>
-                    {Object.entries(loaderData.quotes).map(([k, v]) => (
-                        <div key={k} className="bg-slate-300 p-2 mb-4">
-                            {v.id}
-                            <div dangerouslySetInnerHTML={{ __html: v.raw }} />
-                            <button
-                                onClick={() => {
-                                    fetcher.submit({ remove: v.id }, { method: 'post' });
-                                }}
-                                style={{ background: 'red' }}
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    ))}
+                <div style={{ flex: 1, padding: 24 }} className="min-h-0 flex flex-col">
+                    <div className="">
+                        <Tags data={loaderData.data} />
+                    </div>
+                    <div className="flex-1 flex-col flex min-h-0 overflow-auto">
+                        {Object.entries(loaderData.data.quotes).map(([k, v]) => (
+                            <div key={k} className="border-slate-300 border rounded-lg p-2 mb-4">
+                                <div className="flex flex-row">
+                                    <button
+                                        className="cursor-pointer mr-2 mx-2 py-1"
+                                        onClick={() => {
+                                            ref.current!.contentWindow!.location.href = v.location.href;
+                                        }}
+                                    >
+                                        {loaderData.titles[v.location.href.slice('/epub/nrsvue.epub/'.length)]}
+                                    </button>
+                                    <div className="flex flex-row">
+                                        {v.tags.map((t) =>
+                                            loaderData.data.tags[t] ? (
+                                                <div
+                                                    key={t}
+                                                    style={{
+                                                        background: loaderData.data.tags[t].color,
+                                                    }}
+                                                    className="px-2 py-1 mr-2 rounded"
+                                                >
+                                                    {loaderData.data.tags[t].title}
+                                                    <button
+                                                        className="cursor-pointer ml-2"
+                                                        onClick={() => {
+                                                            fetcher.submit({ type: 'rm-tag', quote: k, tag: t }, { method: 'post' });
+                                                        }}
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
+                                            ) : null,
+                                        )}
+                                    </div>
+                                    <select
+                                        onChange={(evt) => {
+                                            console.log(evt.target.value);
+                                            fetcher.submit(
+                                                {
+                                                    type: 'add-tag',
+                                                    quote: k,
+                                                    tag: evt.target.value,
+                                                },
+                                                { method: 'post' },
+                                            );
+                                        }}
+                                        value=""
+                                    >
+                                        <option value="" disabled>
+                                            Add a tag
+                                        </option>
+                                        {Object.values(loaderData.data.tags)
+                                            .sort((a, b) => cmp(a.title, b.title))
+                                            .map((tag) => (
+                                                <option key={tag.id} value={tag.id}>
+                                                    {tag.title}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                                <div dangerouslySetInnerHTML={{ __html: v.raw }} />
+
+                                <button
+                                    onClick={() => {
+                                        fetcher.submit({ remove: v.id }, { method: 'post' });
+                                    }}
+                                    className="border-red-300 border px-2 py-1 rounded-lg mt-2"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
                 {/* <div dangerouslySetInnerHTML={{ __html: loaderData }} /> */}
             </div>
@@ -285,6 +404,48 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
     );
 }
+
+const Tags = ({ data }: { data: Data }) => {
+    const fetcher = useFetcher();
+    const [text, setText] = useState(null as null | string);
+    return (
+        <div className="flex p-3">
+            {Object.values(data.tags).map((tag) => (
+                <div
+                    key={tag.id}
+                    className="px-2 py-1 rounded mr-2"
+                    style={{
+                        backgroundColor: tag.color,
+                    }}
+                >
+                    {tag.title}
+                </div>
+            ))}
+            {text != null ? (
+                <>
+                    <input className="border" value={text} onChange={(evt) => setText(evt.target.value)} />
+                    <button
+                        onClick={() => {
+                            fetcher.submit(
+                                {
+                                    newTag: text,
+                                },
+                                { method: 'post' },
+                            );
+                            setText(null);
+                        }}
+                    >
+                        Create Tag
+                    </button>
+                </>
+            ) : (
+                <button className="px-2 ml-2 bg-slate-300 rounded" onClick={() => setText('')}>
+                    Add
+                </button>
+            )}
+        </div>
+    );
+};
 
 export const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 
@@ -314,10 +475,19 @@ function highlighter(latest: { current: Data }, pathname: string, w: Window) {
             top: box.top + 'px',
             width: box.width + 'px',
             height: box.height + 'px',
-            backgroundColor: 'red',
-            opacity: 0.1,
+            backgroundColor: '#ffd786',
+            outline: '2px solid #ffd786',
+            borderRadius: '3px',
+            // opacity: 0.1,
+            zIndex: 0,
         });
         h.append(node);
+    });
+    w.document.body.childNodes.forEach((node) => {
+        if (node instanceof w.self.HTMLElement) {
+            node.style.position = 'relative';
+            node.style.zIndex = '10';
+        }
     });
     w.document.body.append(h);
 }
@@ -350,11 +520,6 @@ function getCustomizedStyles(element: HTMLElement) {
     return customizedStyles;
 }
 
-const getRaw = (contents: DocumentFragment, parent: HTMLElement) => {
-    const at = parent.childElementCount;
-    parent.append(contents);
-};
-
 function iterateRangeNodes(range: Range, document: Document, callback: (n: Node) => void) {
     // Create a TreeWalker to traverse nodes within the range
     const treeWalker = document.createTreeWalker(
@@ -378,3 +543,5 @@ function iterateRangeNodes(range: Range, document: Document, callback: (n: Node)
         currentNode = treeWalker.nextNode();
     }
 }
+
+const cmp = (a: any, b: any) => (a < b ? -1 : a > b ? 1 : 0);

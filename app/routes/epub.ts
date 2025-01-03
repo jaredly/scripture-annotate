@@ -3,6 +3,34 @@ import AdmZip from 'adm-zip';
 import { parse } from 'node-html-parser';
 import { dirname, join, relative } from 'path';
 
+export const getChapterNames = (doc: string) => {
+    const v = new AdmZip('./bible/' + doc);
+    const titles: Record<string, string> = {};
+
+    v.getEntries().forEach((entry) => {
+        if (entry.name.startsWith('part') && entry.name.endsWith('.html')) {
+            const text = entry.getData().toString('utf-8');
+            const dom = parse(text);
+            const title = dom.querySelector('.ctfm')?.textContent;
+            if (title) {
+                titles[entry.entryName] = title;
+            }
+        }
+    });
+
+    return titles;
+};
+
+const cache = {};
+let loaded = false;
+export const cachedChapterNames = () => {
+    if (loaded) return cache;
+    const titles = getChapterNames('nrsvue.epub');
+    Object.assign(cache, titles);
+    loaded = true;
+    return cache;
+};
+
 export async function loader({ params, request }: Route.LoaderArgs) {
     const v = new AdmZip('./bible/' + params.doc);
 
