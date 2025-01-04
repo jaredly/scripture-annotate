@@ -5,7 +5,7 @@ import type { Route } from './+types/home';
 // import { parse } from 'node-html-parser';
 import { useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
-import { cachedChapterNames } from './epub';
+import { genId } from './genId';
 
 export function meta({}: Route.MetaArgs) {
     return [{ title: 'Scripture Annotation' }, { name: 'description', content: 'A tool for annotating scriptures' }];
@@ -108,13 +108,12 @@ const getNodePath = (node: Node): NodePath[] => {
 
 const fp = './data.json';
 const initial: Data = { quotes: {}, tags: {} };
-export async function loader({ params }: Route.LoaderArgs): Promise<{ data: Data; titles: Record<string, string> }> {
+export async function loader({ params }: Route.LoaderArgs): Promise<{ data: Data }> {
     if (!existsSync(fp)) {
-        return { data: initial, titles: cachedChapterNames() };
+        return { data: initial };
     }
     const data = JSON.parse(readFileSync(fp, 'utf-8'));
-    const titles = cachedChapterNames();
-    return { data, titles };
+    return { data };
 }
 
 const colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928'];
@@ -256,27 +255,23 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
                             highlighter(latest, pathname, w);
 
-                            w.document.addEventListener('mouseup', () => {
-                                console.log('sel change');
+                            // .ctfm for chapter
+                            // .ver,.ver-f for verse
+
+                            const chapter = w.document.querySelector('.ctfm')?.textContent!;
+                            if (!chapter) {
+                                console.error('no chapter title');
+                                return;
+                            }
+
+                            const addQuote = (tags: string[]) => {
                                 const s = w.document.getSelection();
                                 if (!s || s.rangeCount === 0) return;
                                 if (s.isCollapsed) return;
                                 const range = s.getRangeAt(0);
 
                                 // reify stuff
-                                iterateRangeNodes(range, w.document, (node) => {
-                                    if (node instanceof w.self.HTMLElement) {
-                                        const styles = getCustomizedStyles(node);
-                                        Object.entries(styles).forEach(([key, value]) => {
-                                            node.style.setProperty(key, value);
-                                        });
-                                    }
-                                });
-
-                                const outer = w.document.createElement('div');
-                                outer.append(range.cloneContents());
-                                outer.querySelectorAll('a').forEach((a) => a.remove());
-                                const raw = outer.innerHTML;
+                                const raw = getReifiedRaw(range, w);
 
                                 if (!raw.trim().length) return;
 
@@ -288,34 +283,39 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                                 if (range.endContainer !== resolveNodePath(end, w.document)) {
                                     throw new Error('didnt go back start');
                                 }
-                                const id = genId();
-                                const quote: Data['quotes'][''] = {
-                                    id,
-                                    edited: raw,
-                                    created: Date.now(),
-                                    updated: Date.now(),
-                                    raw,
-                                    location: {
-                                        href: w.location.pathname,
-                                        start: {
-                                            anchor: start,
-                                            offset: range.startOffset,
-                                        },
-                                        end: { anchor: end, offset: range.endOffset },
-                                    },
-                                    notes: '',
-                                    tags: [],
-                                };
-
-                                // const data = { ...loaderData };
-                                // data.quotes = { ...data.quotes, [quote.id]: quote };
+                                const quote = newQuote(raw, w, start, range, end, chapter);
+                                quote.tags = tags;
 
                                 fetcher.submit({ quote: JSON.stringify(quote) }, { method: 'post' }).then(() => {
                                     s.removeAllRanges();
                                     highlighter(latest, pathname, w);
                                 });
+                            };
+
+                            const byKey: Record<string, string> = {};
+                            Object.values(loaderData.data.tags).forEach((tag) => {
+                                byKey[tag.key] = tag.id;
                             });
-                            // alert('hi');
+
+                            w.document.addEventListener('keydown', (evt) => {
+                                switch (evt.key) {
+                                    case 'Enter': {
+                                        console.log('sel change');
+                                        addQuote([]);
+                                        return;
+                                    }
+                                    default:
+                                        const id = byKey[evt.key];
+                                        if (id) {
+                                            addQuote([id]);
+                                        }
+                                        return;
+                                }
+                            });
+
+                            // w.document.addEventListener('mouseup', () => {
+                            //     addQuote([])
+                            // });
                         }}
                     />
                 </div>
@@ -330,10 +330,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                                     <button
                                         className="cursor-pointer mr-2 mx-2 py-1"
                                         onClick={() => {
+                                            // console.log('oaakasdf');
+                                            // debugger;
                                             ref.current!.contentWindow!.location.href = v.location.href;
                                         }}
                                     >
-                                        {loaderData.titles[v.location.href.slice('/epub/nrsvue.epub/'.length)]}
+                                        {
+                                            v.location.chapter ?? 'No chapterrrj'
+                                            // v.location.href
+                                            // loaderData.titles[v.location.href.slice('/epub/nrsvue.epub/'.length)]
+                                        }
                                     </button>
                                     <div className="flex flex-row">
                                         {v.tags.map((t) =>
@@ -447,7 +453,45 @@ const Tags = ({ data }: { data: Data }) => {
     );
 };
 
-export const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
+function newQuote(raw: string, w: Window, start: NodePath[], range: Range, end: NodePath[], chapter: string) {
+    const id = genId();
+    const quote: Quote = {
+        id,
+        edited: raw,
+        created: Date.now(),
+        updated: Date.now(),
+        raw,
+        location: {
+            href: w.location.pathname,
+            start: {
+                anchor: start,
+                offset: range.startOffset,
+            },
+            end: { anchor: end, offset: range.endOffset },
+            chapter,
+        },
+        notes: '',
+        tags: [],
+    };
+    return quote;
+}
+
+function getReifiedRaw(range: Range, w: Window) {
+    iterateRangeNodes(range, w.document, (node) => {
+        if (node instanceof w.self.HTMLElement) {
+            const styles = getCustomizedStyles(node);
+            Object.entries(styles).forEach(([key, value]) => {
+                node.style.setProperty(key, value);
+            });
+        }
+    });
+
+    const outer = w.document.createElement('div');
+    outer.append(range.cloneContents());
+    outer.querySelectorAll('a').forEach((a) => a.remove());
+    const raw = outer.innerHTML;
+    return raw;
+}
 
 function highlighter(latest: { current: Data }, pathname: string, w: Window) {
     const relevant = Object.values(latest.current.quotes).filter((q) => q.location.href === pathname);
