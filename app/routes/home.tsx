@@ -63,6 +63,40 @@ const resolveNodePath = (path: NodePath[], document: Document) => {
     return at;
 };
 
+const hasClass = (node: Node, classNames: string[]) => {
+    return node.nodeType === node.ELEMENT_NODE && classNames.some((className) => (node as HTMLElement).classList.contains(className));
+};
+
+function findClosestPreviousWithClass(element: Node, classNames: string[]): void | Element {
+    const lastChild = (element: Node) => {
+        if (element.lastChild) return lastChild(element.lastChild);
+        return element;
+    };
+
+    const prev = (element: Node) => {
+        if (element.previousSibling) {
+            return lastChild(element.previousSibling);
+        }
+        if (element.parentElement) return element.parentElement;
+    };
+
+    if (hasClass(element, classNames)) return element as Element;
+
+    let current = prev(element);
+
+    while (current) {
+        if (hasClass(current, classNames)) {
+            return current as Element;
+        }
+        current = prev(current);
+    }
+}
+
+const getVerse = (node: Node) => {
+    const v = findClosestPreviousWithClass(node, ['ver', 'ver-f']);
+    return v ? Number(v.textContent) : undefined;
+};
+
 const getNodePath = (node: Node): NodePath[] => {
     if (node instanceof node.ownerDocument!.defaultView!.Text) {
         if (!node.parentElement) throw new Error('no parent');
@@ -143,6 +177,18 @@ export async function action({ request }: Route.ActionArgs) {
             return true;
         }
     }
+    if (type === 'tag') {
+        const tag: Tag | string = JSON.parse(formData.get('tag') as string);
+        const data: Data = existsSync(fp) ? JSON.parse(readFileSync(fp, 'utf-8')) : initial;
+        if (typeof tag === 'string') {
+            delete data.tags[tag];
+        } else {
+            tag.updated = Date.now();
+            data.tags[tag.id] = tag;
+        }
+        writeFileSync(fp, JSON.stringify(data));
+        return true;
+    }
 
     const remove = formData.get('remove');
     if (typeof remove === 'string') {
@@ -179,7 +225,7 @@ const useLatest = <T,>(v: T): { current: T } => {
 
 type Filters = {
     thisChapter: boolean;
-    tags: {};
+    tags: Record<string, boolean>;
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
@@ -196,7 +242,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         }
     }, [loaderData]);
 
-    const [filters, setFilters] = useState<Filters>({ thisChapter: true, tags: {} });
+    const [filters, setFilters] = useState<Filters>({ thisChapter: false, tags: {} });
 
     return (
         <div>
@@ -312,96 +358,100 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                                         return;
                                 }
                             });
-
-                            // w.document.addEventListener('mouseup', () => {
-                            //     addQuote([])
-                            // });
                         }}
                     />
                 </div>
                 <div style={{ flex: 1, padding: 24 }} className="min-h-0 flex flex-col">
-                    <div className="">
-                        <Tags data={loaderData.data} />
+                    <div className="flex flex-row items-center">
+                        <label>
+                            All Chapters
+                            <input
+                                type="checkbox"
+                                className="ml-2"
+                                checked={!filters.thisChapter}
+                                onChange={(evt) => setFilters({ ...filters, thisChapter: !evt.target.checked })}
+                            />
+                        </label>
+                        <Tags data={loaderData.data} filters={filters.tags} setFilters={(tags) => setFilters({ ...filters, tags })} />
                     </div>
                     <div className="flex-1 flex-col flex min-h-0 overflow-auto">
-                        {Object.entries(loaderData.data.quotes).map(([k, v]) => (
-                            <div key={k} className="border-slate-300 border rounded-lg p-2 mb-4">
-                                <div className="flex flex-row">
-                                    <button
-                                        className="cursor-pointer mr-2 mx-2 py-1"
-                                        onClick={() => {
-                                            // console.log('oaakasdf');
-                                            // debugger;
-                                            ref.current!.contentWindow!.location.href = v.location.href;
-                                        }}
-                                    >
-                                        {
-                                            v.location.chapter ?? 'No chapterrrj'
-                                            // v.location.href
-                                            // loaderData.titles[v.location.href.slice('/epub/nrsvue.epub/'.length)]
-                                        }
-                                    </button>
+                        {Object.entries(loaderData.data.quotes)
+                            .filter(applyFilter(filters, url ?? ''))
+                            .map(([k, v]) => (
+                                <div key={k} className="border-slate-300 border rounded-lg p-2 mb-4 relative">
                                     <div className="flex flex-row">
-                                        {v.tags.map((t) =>
-                                            loaderData.data.tags[t] ? (
-                                                <div
-                                                    key={t}
-                                                    style={{
-                                                        background: loaderData.data.tags[t].color,
-                                                    }}
-                                                    className="px-2 py-1 mr-2 rounded"
-                                                >
-                                                    {loaderData.data.tags[t].title}
-                                                    <button
-                                                        className="cursor-pointer ml-2"
-                                                        onClick={() => {
-                                                            fetcher.submit({ type: 'rm-tag', quote: k, tag: t }, { method: 'post' });
+                                        <button
+                                            className="cursor-pointer mr-2 mx-2 py-1 underline"
+                                            onClick={() => {
+                                                ref.current!.contentWindow!.location.href = v.location.href;
+                                            }}
+                                        >
+                                            {v.location.chapter}:{v.location.start.verse + '-' + v.location.end.verse}
+                                        </button>
+                                        <div className="flex flex-row">
+                                            {v.tags.map((t) =>
+                                                loaderData.data.tags[t] ? (
+                                                    <div
+                                                        key={t}
+                                                        style={{
+                                                            background: loaderData.data.tags[t].color,
                                                         }}
+                                                        className="px-2 py-1 mr-2 rounded"
                                                     >
-                                                        &times;
-                                                    </button>
-                                                </div>
-                                            ) : null,
-                                        )}
-                                    </div>
-                                    <select
-                                        onChange={(evt) => {
-                                            console.log(evt.target.value);
-                                            fetcher.submit(
-                                                {
-                                                    type: 'add-tag',
-                                                    quote: k,
-                                                    tag: evt.target.value,
-                                                },
-                                                { method: 'post' },
-                                            );
-                                        }}
-                                        value=""
-                                    >
-                                        <option value="" disabled>
-                                            Add a tag
-                                        </option>
-                                        {Object.values(loaderData.data.tags)
-                                            .sort((a, b) => cmp(a.title, b.title))
-                                            .map((tag) => (
-                                                <option key={tag.id} value={tag.id}>
-                                                    {tag.title}
-                                                </option>
-                                            ))}
-                                    </select>
-                                </div>
-                                <div dangerouslySetInnerHTML={{ __html: v.raw }} />
+                                                        {loaderData.data.tags[t].title}
+                                                        <button
+                                                            className="cursor-pointer ml-2"
+                                                            onClick={() => {
+                                                                fetcher.submit({ type: 'rm-tag', quote: k, tag: t }, { method: 'post' });
+                                                            }}
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </div>
+                                                ) : null,
+                                            )}
+                                        </div>
+                                        <select
+                                            onChange={(evt) => {
+                                                console.log(evt.target.value);
+                                                fetcher.submit(
+                                                    {
+                                                        type: 'add-tag',
+                                                        quote: k,
+                                                        tag: evt.target.value,
+                                                    },
+                                                    { method: 'post' },
+                                                );
+                                            }}
+                                            value=""
+                                        >
+                                            <option value="" disabled>
+                                                Add a tag
+                                            </option>
+                                            {Object.values(loaderData.data.tags)
+                                                .sort((a, b) => cmp(a.title, b.title))
+                                                .map((tag) => (
+                                                    <option key={tag.id} value={tag.id}>
+                                                        {tag.title}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                        <div className="flex-1" />
 
-                                <button
-                                    onClick={() => {
-                                        fetcher.submit({ remove: v.id }, { method: 'post' });
-                                    }}
-                                    className="border-red-300 border px-2 py-1 rounded-lg mt-2"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        ))}
+                                        <button
+                                            onClick={() => {
+                                                if (confirm('Really delete?')) {
+                                                    fetcher.submit({ remove: v.id }, { method: 'post' });
+                                                }
+                                            }}
+                                            className="px-1 absolute text-red-700 text-xs rounded-lg mt-2 top-0 right-2"
+                                        >
+                                            &times;
+                                        </button>
+                                    </div>
+                                    <div dangerouslySetInnerHTML={{ __html: v.raw }} />
+                                </div>
+                            ))}
                     </div>
                 </div>
                 {/* <div dangerouslySetInnerHTML={{ __html: loaderData }} /> */}
@@ -411,20 +461,92 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     );
 }
 
-const Tags = ({ data }: { data: Data }) => {
+const TagModal = ({ tag, onClose, onSubmit }: { tag: Tag; onClose: () => void; onSubmit: (tag: Tag | null) => void }) => {
+    const [tmp, setTmp] = useState(tag);
+    return (
+        <div onClick={(evt) => evt.stopPropagation()} className="py-1 px-2 flex flex-col">
+            <label>
+                Title
+                <input className="rounded px-1 ml-1 w-32" value={tmp.title} onChange={(evt) => setTmp({ ...tmp, title: evt.target.value })} />
+            </label>
+            <label className="mt-2">
+                Key
+                <input className="rounded text-center px-1 w-10 ml-1" value={tmp.key} onChange={(evt) => setTmp({ ...tmp, key: evt.target.value })} />
+            </label>
+
+            <div className="flex flex-row mt-2">
+                <button className="bg-green-200 px-2 mr-2 py-1 rounded" onClick={() => onSubmit(tmp)}>
+                    Submit
+                </button>
+                <button className="bg-red-400 px-2 mr-2 py-1 rounded" onClick={onClose}>
+                    Cancel
+                </button>
+                <button className="bg-red-800 text-white px-2 mr-2 py-1 rounded" onClick={() => onSubmit(null)}>
+                    Delete
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const applyFilter =
+    (filters: Filters, href: string) =>
+    ([id, quote]: [string, Quote]) => {
+        const on = Object.keys(filters.tags).filter((t) => filters.tags[t]);
+        if (on.length) {
+            if (!on.every((t) => quote.tags.includes(t))) return false;
+        }
+        if (filters.thisChapter && quote.location.href !== href) return false;
+        return true;
+    };
+
+const Tags = ({
+    data,
+    filters,
+    setFilters,
+}: {
+    data: Data;
+    filters: Record<string, boolean>;
+    setFilters: (filters: Record<string, boolean>) => void;
+}) => {
     const fetcher = useFetcher();
     const [text, setText] = useState(null as null | string);
+    const [modal, setModal] = useState(null as null | string);
     return (
         <div className="flex p-3">
             {Object.values(data.tags).map((tag) => (
                 <div
                     key={tag.id}
-                    className="px-2 py-1 rounded mr-2"
+                    className="px-2 py-1 rounded mr-2 relative cursor-pointer"
                     style={{
                         backgroundColor: tag.color,
                     }}
+                    onClick={() => (modal === tag.id ? setModal(null) : setModal(tag.id))}
                 >
-                    {tag.title}
+                    <input
+                        type="checkbox"
+                        checked={!!filters[tag.id]}
+                        className="mr-1"
+                        onClick={(evt) => evt.stopPropagation()}
+                        onChange={(evt) => {
+                            const f = { ...filters };
+                            f[tag.id] = evt.target.checked;
+                            setFilters(f);
+                        }}
+                    />
+                    {tag.title} <span className="px-1 bg-slate-100 rounded-md">{tag.key}</span>
+                    {modal === tag.id ? (
+                        <div className="border rounded absolute z-10 top-full mt-2 bg-orange-200">
+                            <TagModal
+                                tag={tag}
+                                onClose={() => setModal(null)}
+                                onSubmit={(nw) => {
+                                    fetcher.submit({ type: 'tag', tag: JSON.stringify(nw === null ? tag.id : nw) }, { method: 'post' });
+                                    setModal(null);
+                                }}
+                            />
+                        </div>
+                    ) : null}
                 </div>
             ))}
             {text != null ? (
@@ -466,8 +588,9 @@ function newQuote(raw: string, w: Window, start: NodePath[], range: Range, end: 
             start: {
                 anchor: start,
                 offset: range.startOffset,
+                verse: getVerse(range.startContainer),
             },
-            end: { anchor: end, offset: range.endOffset },
+            end: { anchor: end, offset: range.endOffset, verse: getVerse(range.endContainer) },
             chapter,
         },
         notes: '',
