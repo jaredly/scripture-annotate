@@ -31,8 +31,14 @@ export const cachedChapterNames = () => {
     return cache;
 };
 
+const zipCache: Record<string, AdmZip> = {};
+const getZip = (name: string) => {
+    if (!zipCache[name]) zipCache[name] = new AdmZip('./bible/' + name);
+    return zipCache[name];
+};
+
 export async function loader({ params, request }: Route.LoaderArgs) {
-    const v = new AdmZip('./bible/' + params.doc);
+    const v = getZip(params.doc);
 
     if (params['*'] === '') {
         const content = v.getEntry('content.opf');

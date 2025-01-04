@@ -1,4 +1,10 @@
 
+# Next
+
+- [ ] allow multiple 'users'
+  - if no localstorage, say 'who is this'
+    - allow adding a name
+
 # NExt
 
 - [x] show .chapter, ditch the 'cachedChapterTitles' stuff
