@@ -7,3 +7,4 @@ git add .
 git commit -m 'deploy'
 git push origin main:update
 ssh linode "cd sites/jesus; git merge update -m merge; /home/local-first/.local/bin/pm2 restart jesus"
+# pm2 start --name jesus ./run.sh

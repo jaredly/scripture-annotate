@@ -1,6 +1,9 @@
 
 # Next
 
+- [x] loading chapters is a little slow...can I improve?
+  - maybeee, caching the zip file is maybe a thing that worked? idk.
+    - I guess I could pre-extract everything, that might speed things up. but it's not too much of a hassle at the moment.
 - [ ] allow multiple 'users'
   - if no localstorage, say 'who is this'
     - allow adding a name
