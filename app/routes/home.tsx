@@ -476,7 +476,7 @@ const TagModal = ({ tag, onClose, onSubmit }: { tag: Tag; onClose: () => void; o
 
             <div className="flex flex-row mt-2">
                 <button className="bg-green-200 px-2 mr-2 py-1 rounded" onClick={() => onSubmit(tmp)}>
-                    Submit
+                    Update
                 </button>
                 <button className="bg-red-400 px-2 mr-2 py-1 rounded" onClick={onClose}>
                     Cancel

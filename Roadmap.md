@@ -1,8 +1,9 @@
 
 # NExt
 
-- [ ] show .chapter, ditch the 'cachedChapterTitles' stuff
-- [ ] track .verse on the start & end, so we can show fine grained reference.
+- [x] show .chapter, ditch the 'cachedChapterTitles' stuff
+- [x] track .verse on the start & end, so we can show fine grained reference.
+- [x] handle tags in a way that basically works
 
 # Data structuring
 

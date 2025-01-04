@@ -2,6 +2,7 @@
 data.json
 bible
 /node_modules/
+deploy
 
 # React Router
 /.react-router/
