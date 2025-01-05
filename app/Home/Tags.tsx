@@ -1,11 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import type { Route } from '../routes/+types/home';
-// import { Welcome } from '../welcome/welcome';
-// import AdmZip from 'adm-zip';
-// import { parse } from 'node-html-parser';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useFetcher } from 'react-router';
-import { genId } from '../routes/genId';
 
 import { TagModal } from './TagModal';
 

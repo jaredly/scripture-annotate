@@ -23,8 +23,16 @@ export type Quote = {
     created: number;
     updated: number;
 };
+
 export type Tag = { id: string; color: string; key: string; title: string; created: number; updated: number };
 export type Data = {
+    version: 1;
     tags: Record<string, Tag>;
     quotes: Record<string, Quote>;
+    users: Record<string, User>;
+};
+
+export type User = {
+    id: string;
+    name: string;
 };
