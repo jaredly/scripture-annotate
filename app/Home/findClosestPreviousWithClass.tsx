@@ -1,4 +1,4 @@
-import { hasClass, undefined } from './Home';
+import { hasClass } from './Home';
 
 function findClosestPreviousWithClass(element: Node, classNames: string[]): void | Element {
     const lastChild = (element: Node) => {

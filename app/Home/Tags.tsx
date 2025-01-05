@@ -68,7 +68,7 @@ export const Tags = ({
             ))}
             {text != null ? (
                 <>
-                    <input className="border" value={text} onChange={(evt) => setText(evt.target.value)} />
+                    <input className="border p-1" value={text} onChange={(evt) => setText(evt.target.value)} />
                     <button
                         onClick={() => {
                             fetcher.submit(
@@ -79,13 +79,18 @@ export const Tags = ({
                             );
                             setText(null);
                         }}
+                        className="px-2 ml-2 bg-lime-200 rounded"
+                        disabled={!text.trim()}
                     >
                         Create Tag
+                    </button>
+                    <button className="px-2 ml-2 bg-slate-300 rounded" onClick={() => setText(null)}>
+                        Cancel
                     </button>
                 </>
             ) : (
                 <button className="px-2 ml-2 bg-slate-300 rounded" onClick={() => setText('')}>
-                    Add
+                    Add Tag
                 </button>
             )}
         </div>

@@ -1,18 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import type { Route } from '../routes/+types/home';
 // import { Welcome } from '../welcome/welcome';
 // import AdmZip from 'adm-zip';
 // import { parse } from 'node-html-parser';
-import { useEffect, useRef, useState } from 'react';
-import { useFetcher, type FetcherWithComponents } from 'react-router';
-import { TagModal } from './TagModal';
-import { applyFilter, Tags } from './Tags';
-import { newQuote } from './newQuote';
-import { highlighter } from './highlighter';
-import { getNodePath } from './getNodePath';
-import type { Data, NodePath, Quote } from './types';
-import { getCustomizedStyles } from './getCustomizedStyles';
-import { setupKeyListener } from './setupKeyListener';
+import { type FetcherWithComponents } from 'react-router';
+import type { Data, Quote } from './types';
 
 export function ShowQuote({
     k,

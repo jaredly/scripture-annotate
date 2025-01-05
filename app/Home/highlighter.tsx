@@ -1,5 +1,5 @@
-import { resolveNodePath } from './Home';
-import { Data } from './types';
+import { resolveNodePath } from './setupKeyListener';
+import type { Data } from './types';
 
 export function highlighter(latest: { current: Data }, pathname: string, w: Window) {
     const relevant = Object.values(latest.current.quotes).filter((q) => q.location.href === pathname);

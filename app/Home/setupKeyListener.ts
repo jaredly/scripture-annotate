@@ -1,17 +1,12 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import type { Route } from '../routes/+types/home';
 // import { Welcome } from '../welcome/welcome';
 // import AdmZip from 'adm-zip';
 // import { parse } from 'node-html-parser';
-import { useEffect, useRef, useState } from 'react';
-import { useFetcher, type FetcherWithComponents } from 'react-router';
-import { TagModal } from './TagModal';
-import { applyFilter, Tags } from './Tags';
-import { newQuote } from './newQuote';
-import { highlighter } from './highlighter';
-import { getNodePath } from './getNodePath';
-import type { Data, NodePath } from './types';
+import { type FetcherWithComponents } from 'react-router';
 import { getCustomizedStyles } from './getCustomizedStyles';
+import { getNodePath } from './getNodePath';
+import { highlighter } from './highlighter';
+import { newQuote } from './newQuote';
+import type { Data, NodePath } from './types';
 
 export const setupKeyListener = (w: Window, latest: { current: Data }, fetcher: FetcherWithComponents<any>) => {
     const pathname = w.location.pathname;
